@@ -11,33 +11,33 @@ class EquitiesSilverProcessor:
         self.bronze_path = bronze_path
 
     def load(self) -> pd.DataFrame:
-        """
-        Load raw equities data from the Bronze layer and perform
-        explicit, minimal cleanup required for schema validation.
-        """
-        df = pd.read_csv(self.bronze_path, parse_dates=["Date"])
+        df = pd.read_csv(self.bronze_path)
 
-        # ---- Timestamp cleanup ----
-        initial_rows = len(df)
-        df = df.dropna(subset=["Date"])
-        dropped_dates = initial_rows - len(df)
+        # ---- Date coercion ----
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        invalid_dates = df["Date"].isna().sum()
 
-        if dropped_dates > 0:
-            print(f"[SILVER] Dropped {dropped_dates} rows with invalid Date")
+        if invalid_dates > 0:
+            print(f"[SILVER] Dropped {invalid_dates} rows with invalid Date")
+            df = df.dropna(subset=["Date"])
 
-        # ---- Explicit numeric coercion ----
+        # ---- Schema normalization ----
+        if "Adj Close" not in df.columns:
+            print("[SILVER] 'Adj Close' missing — defaulting to Close")
+            df["Adj Close"] = df["Close"]
+
+        # ---- Numeric coercion ----
         numeric_cols = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
 
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        # Drop rows with invalid numeric values
-        rows_before_numeric = len(df)
+        before = len(df)
         df = df.dropna(subset=numeric_cols)
-        dropped_numeric = rows_before_numeric - len(df)
+        dropped = before - len(df)
 
-        if dropped_numeric > 0:
-            print(f"[SILVER] Dropped {dropped_numeric} rows with invalid numeric values")
+        if dropped > 0:
+            print(f"[SILVER] Dropped {dropped} rows with invalid numeric values")
 
         return df
 
@@ -52,18 +52,17 @@ class EquitiesSilverProcessor:
         Write validated equities data to the Silver layer in Parquet format.
         """
         date_str = datetime.utcnow().date().isoformat()
-        silver_path = Path("data") / "silver" / "equities" / date_str
-        silver_path.mkdir(parents=True, exist_ok=True)
+        out_dir = Path("data") / "silver" / "equities" / date_str
+        out_dir.mkdir(parents=True, exist_ok=True)
 
-        out_file = silver_path / "validated.parquet"
+        out_file = out_dir / "validated.parquet"
         df.to_parquet(out_file, index=False)
 
         return out_file
 
     def run(self) -> Path:
         """
-        Execute the full Bronze → Silver pipeline for equities data
-        and emit a DATA_VALIDATED event on success.
+        Execute the full Bronze → Silver pipeline and emit DATA_VALIDATED.
         """
         df = self.load()
         df_valid = self.validate(df)

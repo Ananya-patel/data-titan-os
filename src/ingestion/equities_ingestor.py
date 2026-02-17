@@ -5,17 +5,52 @@ from datetime import datetime
 from src.ingestion.base_ingestor import BaseIngestor
 
 
-
-
-
 class EquitiesIngestor(BaseIngestor):
     def __init__(self, ticker: str):
         super().__init__(domain="equities", source="yfinance")
         self.ticker = ticker
 
     def fetch(self) -> pd.DataFrame:
-        df = yf.download(self.ticker, period="1y", auto_adjust=False)
-        df.reset_index(inplace=True)
+        """
+        Fetch equities data with a resilient fallback strategy.
+        Primary: Yahoo Finance
+        Fallback: Stooq
+        """
+
+        try:
+            df = yf.download(
+                self.ticker,
+                period="1y",
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+            )
+
+            if df is None or df.empty:
+                raise ValueError("Yahoo returned empty dataframe")
+
+            df = df.reset_index()
+
+        except Exception as yahoo_error:
+            print(f"[WARN] Yahoo failed for {self.ticker}: {yahoo_error}")
+            print("[FALLBACK] Using Stooq data source")
+
+            import pandas_datareader.data as web
+
+            df = web.DataReader(
+                self.ticker,
+                data_source="stooq",
+                start="2023-01-01",
+            ).reset_index()
+
+        # ---- Hard contract checks ----
+        if "Date" not in df.columns:
+            raise RuntimeError(
+                f"[INGESTION FAILED] Missing Date column for {self.ticker}"
+            )
+
+        df["Ticker"] = self.ticker
         return df
 
     def run(self):

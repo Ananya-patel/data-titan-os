@@ -11,6 +11,7 @@ EquitiesSchema = DataFrameSchema(
         "Close": Column(float, Check.ge(0)),
         "Adj Close": Column(float, Check.ge(0)),
         "Volume": Column(int, Check.ge(0)),
+        "Ticker": Column(pa.String, nullable=False),
 
     },
     checks=[

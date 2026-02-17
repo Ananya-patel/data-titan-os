@@ -4,71 +4,56 @@ from src.ingestion.equities_ingestor import EquitiesIngestor
 from src.ingestion.macro_ingestor import MacroIngestor
 from src.silver.equities_silver import EquitiesSilverProcessor
 from src.silver.macro_silver import MacroSilverProcessor
+from src.features.equities_features import EquitiesFeatureFactory
+from src.signals.equities_signals import EquitiesSignalEngine
+from src.backtest.equities_backtest import EquitiesBacktester
 
 
 if __name__ == "__main__":
-    equities = EquitiesIngestor(ticker="AAPL")
-    equities.run()
 
+    # ---- Bronze: Equities ----
+    try:
+        equities = EquitiesIngestor("AAPL")
+        equities.run()
+    except Exception as e:
+        print(f"[PIPELINE HALT] Equities ingestion failed: {e}")
+        raise
+
+    # ---- Bronze: Macro ----
     macro = MacroIngestor(indicator="DFF")
     macro.run()
 
-    # ---- Silver Layer (Equities) ----
-    bronze_file = max(
+    # ---- Silver: Equities ----
+    bronze_equities_file = max(
         Path("data/bronze/equities").rglob("raw_data.csv"),
         key=lambda p: p.stat().st_mtime,
     )
 
-    silver = EquitiesSilverProcessor(bronze_file)
-    silver_path = silver.run()
+    equities_silver = EquitiesSilverProcessor(bronze_equities_file)
+    silver_equities_path = equities_silver.run()
+    print(f"[SILVER] Equities validated → {silver_equities_path}")
 
-    print(f"[SILVER] Validated data written to {silver_path}")
-    # ---- Silver Layer (Macro) ----
-    macro_bronze_file = max(
-    Path("data/bronze/macro").rglob("raw_data.csv"),
-    key=lambda p: p.stat().st_mtime,
-)
+    # ---- Silver: Macro ----
+    bronze_macro_file = max(
+        Path("data/bronze/macro").rglob("raw_data.csv"),
+        key=lambda p: p.stat().st_mtime,
+    )
 
-    macro_silver = MacroSilverProcessor(macro_bronze_file)
-    macro_silver_path = macro_silver.run()
+    macro_silver = MacroSilverProcessor(bronze_macro_file)
+    silver_macro_path = macro_silver.run()
+    print(f"[SILVER] Macro validated → {silver_macro_path}")
 
-    print(f"[SILVER] Macro validated data written to {macro_silver_path}")
-    from src.features.equities_features import EquitiesFeatureFactory
+    # ---- Features ----
+    features = EquitiesFeatureFactory(silver_equities_path)
+    features_path = features.run()
+    print(f"[FEATURES] Written → {features_path}")
 
-# ---- Feature Factory (Equities) ----
-silver_equities_file = max(
-    Path("data/silver/equities").rglob("validated.parquet"),
-    key=lambda p: p.stat().st_mtime,
-)
+    # ---- Signals ----
+    signals = EquitiesSignalEngine(features_path)
+    signals_path = signals.run()
+    print(f"[SIGNALS] Written → {signals_path}")
 
-features = EquitiesFeatureFactory(silver_equities_file)
-feature_path = features.run()
-
-print(f"[FEATURES] Equities features written to {feature_path}")
-from src.signals.equities_signals import EquitiesSignalEngine
-
-# ---- Signal Engine (Equities) ----
-feature_file = max(
-    Path("data/features/equities").rglob("features.parquet"),
-    key=lambda p: p.stat().st_mtime,
-)
-
-signals = EquitiesSignalEngine(feature_file)
-signal_path = signals.run()
-
-print(f"[SIGNALS] Equities signals written to {signal_path}")
-from src.backtest.equities_backtest import EquitiesBacktester
-
-# ---- Backtesting Engine (Equities) ----
-signal_file = max(
-    Path("data/signals/equities").rglob("signals.parquet"),
-    key=lambda p: p.stat().st_mtime,
-)
-
-backtester = EquitiesBacktester(signal_file)
-gold_path = backtester.run()
-
-print(f"[GOLD] Backtest results written to {gold_path}")
-
-
-
+    # ---- Backtest (Gold) ----
+    backtester = EquitiesBacktester(signals_path)
+    gold_path = backtester.run()
+    print(f"[GOLD] Backtest results → {gold_path}")

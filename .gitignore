@@ -1,15 +1,22 @@
 # Python
 __pycache__/
 *.pyc
-.venv/
-
-# Data artifacts
-data/
-metadata/
-
-# Environment variables
+*.pyo
+*.pyd
 .env
+.venv/
+venv/
+
+# Data (never commit generated data)
+data/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.log
