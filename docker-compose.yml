@@ -1,0 +1,11 @@
+
+
+services:
+  data-titan:
+    build: .
+    container_name: data-titan-os
+    volumes:
+      - ./data:/app/data
+      - ./metadata:/app/metadata
+    env_file:
+      - .env
